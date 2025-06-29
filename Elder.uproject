@@ -7,7 +7,13 @@
 		{
 			"Name": "Elder",
 			"Type": "Runtime",
-			"LoadingPhase": "Default"
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"GameplayAbilities",
+				"Engine",
+				"CoreUObject",
+				"EnhancedInput"
+			]
 		}
 	],
 	"Plugins": [
