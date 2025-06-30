@@ -6,6 +6,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "ElderGameplayTags.h"
 #include "AbilitySystem/Abilities/ElderGameplayAbility.h"
+#include "Game/LoadScreenSaveGame.h"
 #include "Interaction/PlayerInterface.h"
 #include "Player/ElderPlayerController.h"
 
@@ -15,14 +16,45 @@ void UElderAbilitySystemComponent::AbilityActorInfoSet()
 	OnGameplayEffectAppliedDelegateToSelf.AddUObject(this, &UElderAbilitySystemComponent::ClientEffectApplied);
 }
 
+void UElderAbilitySystemComponent::AddCharacterAbilitiesFromSaveData(ULoadScreenSaveGame* SaveData)
+{
+	for (const FSavedAbility& Data : SaveData->SavedAbilities)
+	{
+		const TSubclassOf<UGameplayAbility> LoadedAbilityClass = Data.GameplayAbility;
+
+		FGameplayAbilitySpec LoadedAbilitySpec = FGameplayAbilitySpec(LoadedAbilityClass, Data.AbilityLevel);
+
+		LoadedAbilitySpec.DynamicAbilityTags.AddTag(Data.AbilitySlot);
+		LoadedAbilitySpec.DynamicAbilityTags.AddTag(Data.AbilityStatus);
+		if (Data.AbilityType == FElderGameplayTags::Get().Abilities_Type_Offensive)
+		{
+			GiveAbility(LoadedAbilitySpec);
+		}
+		else if (Data.AbilityType == FElderGameplayTags::Get().Abilities_Type_Passive)
+		{
+			if (Data.AbilityStatus.MatchesTagExact(FElderGameplayTags::Get().Abilities_Status_Equipped))
+			{
+				GiveAbilityAndActivateOnce(LoadedAbilitySpec);
+				MulticastActivatePassiveEffect(Data.AbilityTag, true);
+			}
+			else
+			{
+				GiveAbility(LoadedAbilitySpec);
+			}
+		}
+	}
+	bStartupAbilitiesGiven = true;
+	AbilitiesGivenDelegate.Broadcast();
+}
+
 void UElderAbilitySystemComponent::AddCharacterAbilities(const TArray<TSubclassOf<UGameplayAbility>>& StartupAbilities)
 {
 	for (const TSubclassOf<UGameplayAbility> AbilityClass : StartupAbilities)
 	{
 		FGameplayAbilitySpec AbilitySpec = FGameplayAbilitySpec(AbilityClass, 1);
-		if (const UElderGameplayAbility* AuraAbility = Cast<UElderGameplayAbility>(AbilitySpec.Ability))
+		if (const UElderGameplayAbility* ElderAbility = Cast<UElderGameplayAbility>(AbilitySpec.Ability))
 		{
-			AbilitySpec.DynamicAbilityTags.AddTag(AuraAbility->StartupInputTag);
+			AbilitySpec.DynamicAbilityTags.AddTag(ElderAbility->StartupInputTag);
 			AbilitySpec.DynamicAbilityTags.AddTag(FElderGameplayTags::Get().Abilities_Status_Equipped);
 			GiveAbility(AbilitySpec);
 		}
@@ -240,18 +272,18 @@ void UElderAbilitySystemComponent::UpgradeAttribute(const FGameplayTag& Attribut
 
 void UElderAbilitySystemComponent::UpdateAbilityStatuses(int32 Level)
 {
-	// UAbilityInfo* AbilityInfo = UAuraAbilitySystemLibrary::GetAbilityInfo(GetAvatarActor());
-	// for (const FAuraAbilityInfo& Info : AbilityInfo->AbilityInformation)
+	// UAbilityInfo* AbilityInfo = UElderAbilitySystemLibrary::GetAbilityInfo(GetAvatarActor());
+	// for (const FElderAbilityInfo& Info : AbilityInfo->AbilityInformation)
 	// {
 	// 	if (!Info.AbilityTag.IsValid()) continue;
 	// 	if (Level < Info.LevelRequirement) continue;
 	// 	if (GetSpecFromAbilityTag(Info.AbilityTag) == nullptr)
 	// 	{
 	// 		FGameplayAbilitySpec AbilitySpec = FGameplayAbilitySpec(Info.Ability, 1);
-	// 		AbilitySpec.DynamicAbilityTags.AddTag(FAuraGameplayTags::Get().Abilities_Status_Eligible);
+	// 		AbilitySpec.DynamicAbilityTags.AddTag(FElderGameplayTags::Get().Abilities_Status_Eligible);
 	// 		GiveAbility(AbilitySpec);
 	// 		MarkAbilitySpecDirty(AbilitySpec);
-	// 		ClientUpdateAbilityStatus(Info.AbilityTag,FAuraGameplayTags::Get().Abilities_Status_Eligible, 1);
+	// 		ClientUpdateAbilityStatus(Info.AbilityTag,FElderGameplayTags::Get().Abilities_Status_Eligible, 1);
 	// 	}
 	// }
 }

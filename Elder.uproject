@@ -12,7 +12,11 @@
 				"GameplayAbilities",
 				"Engine",
 				"CoreUObject",
-				"EnhancedInput"
+				"EnhancedInput",
+				"Niagara",
+				"UMG",
+				"ModelViewViewModel",
+				"AIModule"
 			]
 		}
 	],
@@ -26,6 +30,14 @@
 		},
 		{
 			"Name": "GameplayAbilities",
+			"Enabled": true
+		},
+		{
+			"Name": "MotionWarping",
+			"Enabled": true
+		},
+		{
+			"Name": "ModelViewViewModel",
 			"Enabled": true
 		}
 	]

@@ -3,26 +3,71 @@
 
 #include "Character/ElderCharacterBase.h"
 
+#include "ElderGameplayTags.h"
 #include "AbilitySystem/ElderAbilitySystemComponent.h"
+#include "AbilitySystem/Debuff/DebuffNiagaraComponent.h"
+#include "AbilitySystem/Passive/PassiveNiagaraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Elder/Elder.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 
-// Sets default values
 AElderCharacterBase::AElderCharacterBase()
 {
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
+	const FElderGameplayTags& GameplayTags = FElderGameplayTags::Get();
+	
+	BurnDebuffComponent = CreateDefaultSubobject<UDebuffNiagaraComponent>("BurnDebuffComponent");
+	BurnDebuffComponent->SetupAttachment(GetRootComponent());
+	BurnDebuffComponent->DebuffTag = GameplayTags.Debuff_Burn;
+
+	StunDebuffComponent = CreateDefaultSubobject<UDebuffNiagaraComponent>("StunDebuffComponent");
+	StunDebuffComponent->SetupAttachment(GetRootComponent());
+	StunDebuffComponent->DebuffTag = GameplayTags.Debuff_Stun;
 
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 	GetCapsuleComponent()->SetGenerateOverlapEvents(false);
 	GetMesh()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-	// GetMesh()->SetCollisionResponseToChannel(ECC_Projectile, ECR_Overlap);
+	GetMesh()->SetCollisionResponseToChannel(ECC_Projectile, ECR_Overlap);
 	GetMesh()->SetGenerateOverlapEvents(true);
-	
+
 	Weapon = CreateDefaultSubobject<USkeletalMeshComponent>("Weapon");
 	Weapon->SetupAttachment(GetMesh(), FName("WeaponHandSocket"));
 	Weapon->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	EffectAttachComponent = CreateDefaultSubobject<USceneComponent>("EffectAttachPoint");
+	EffectAttachComponent->SetupAttachment(GetRootComponent());
+	HaloOfProtectionNiagaraComponent = CreateDefaultSubobject<UPassiveNiagaraComponent>("HaloOfProtectionComponent");
+	HaloOfProtectionNiagaraComponent->SetupAttachment(EffectAttachComponent);
+	LifeSiphonNiagaraComponent = CreateDefaultSubobject<UPassiveNiagaraComponent>("LifeSiphonNiagaraComponent");
+	LifeSiphonNiagaraComponent->SetupAttachment(EffectAttachComponent);
+	ManaSiphonNiagaraComponent = CreateDefaultSubobject<UPassiveNiagaraComponent>("ManaSiphonNiagaraComponent");
+	ManaSiphonNiagaraComponent->SetupAttachment(EffectAttachComponent);
+
+	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+}
+
+void AElderCharacterBase::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+	EffectAttachComponent->SetWorldRotation(FRotator::ZeroRotator);
+}
+
+void AElderCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AElderCharacterBase, bIsStunned);
+	DOREPLIFETIME(AElderCharacterBase, bIsBurned);
+	DOREPLIFETIME(AElderCharacterBase, bIsBeingShocked);
+}
+
+float AElderCharacterBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+	const float DamageTaken = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	OnDamageDelegate.Broadcast(DamageTaken);
+	return DamageTaken;
 }
 
 UAbilitySystemComponent* AElderCharacterBase::GetAbilitySystemComponent() const
@@ -46,9 +91,70 @@ FOnDeathSignature& AElderCharacterBase::GetOnDeathDelegate()
 	return OnDeathDelegate;
 }
 
+void AElderCharacterBase::MulticastHandleDeath_Implementation(const FVector& DeathImpulse)
+{
+	UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation(), GetActorRotation());
+	
+	Weapon->SetSimulatePhysics(true);
+	Weapon->SetEnableGravity(true);
+	Weapon->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
+	Weapon->AddImpulse(DeathImpulse * 0.1f, NAME_None, true);
+	
+	GetMesh()->SetSimulatePhysics(true);
+	GetMesh()->SetEnableGravity(true);
+	GetMesh()->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
+	GetMesh()->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	GetMesh()->AddImpulse(DeathImpulse, NAME_None, true);
+	
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Dissolve();
+	bDead = true;
+	BurnDebuffComponent->Deactivate();
+	StunDebuffComponent->Deactivate();
+	OnDeathDelegate.Broadcast(this);
+}
+
+void AElderCharacterBase::StunTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
+{
+	bIsStunned = NewCount > 0;
+	GetCharacterMovement()->MaxWalkSpeed = bIsStunned ? 0.f : BaseWalkSpeed;
+}
+
+void AElderCharacterBase::OnRep_Stunned()
+{
+	
+}
+
+void AElderCharacterBase::OnRep_Burned()
+{
+}
+
+void AElderCharacterBase::BeginPlay()
+{
+	Super::BeginPlay();
+	
+}
+
 FVector AElderCharacterBase::GetCombatSocketLocation_Implementation(const FGameplayTag& MontageTag)
 {
-	return ICombatInterface::GetCombatSocketLocation_Implementation(MontageTag);
+	const FElderGameplayTags& GameplayTags = FElderGameplayTags::Get();
+	if (MontageTag.MatchesTagExact(GameplayTags.CombatSocket_Weapon) && IsValid(Weapon))
+	{
+		return Weapon->GetSocketLocation(WeaponTipSocketName);
+	}
+	if (MontageTag.MatchesTagExact(GameplayTags.CombatSocket_LeftHand))
+	{
+		return GetMesh()->GetSocketLocation(LeftHandSocketName);
+	}
+	if (MontageTag.MatchesTagExact(GameplayTags.CombatSocket_RightHand))
+	{
+		return GetMesh()->GetSocketLocation(RightHandSocketName);
+	}
+	if (MontageTag.MatchesTagExact(GameplayTags.CombatSocket_Tail))
+	{
+		return GetMesh()->GetSocketLocation(TailSocketName);
+	}
+	return FVector();
 }
 
 bool AElderCharacterBase::IsDead_Implementation() const
@@ -93,6 +199,11 @@ void AElderCharacterBase::IncremenetMinionCount_Implementation(int32 Amount)
 	MinionCount += Amount;
 }
 
+ECharacterClass AElderCharacterBase::GetCharacterClass_Implementation()
+{
+	return CharacterClass;
+}
+
 FOnASCRegistered& AElderCharacterBase::GetOnASCRegisteredDelegate()
 {
 	return OnAscRegistered;
@@ -118,42 +229,6 @@ FOnDamageSignature& AElderCharacterBase::GetOnDamageSignature()
 	return OnDamageDelegate;
 }
 
-void AElderCharacterBase::MulticastHandleDeath_Implementation(const FVector& DeathImpulse)
-{
-	UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation(), GetActorRotation());
-	
-	Weapon->SetSimulatePhysics(true);
-	Weapon->SetEnableGravity(true);
-	Weapon->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
-	Weapon->AddImpulse(DeathImpulse * 0.1f, NAME_None, true);
-
-	GetMesh()->SetSimulatePhysics(true);
-	GetMesh()->SetEnableGravity(true);
-	GetMesh()->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
-	GetMesh()->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
-	GetMesh()->AddImpulse(DeathImpulse, NAME_None, true);
-
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Dissolve();
-	bDead = true;
-	
-}
-
-void AElderCharacterBase::OnRep_Stunned()
-{
-}
-
-void AElderCharacterBase::OnRep_Burned()
-{
-}
-
-// Called when the game starts or when spawned
-void AElderCharacterBase::BeginPlay()
-{
-	Super::BeginPlay();
-	
-}
-
 void AElderCharacterBase::InitAbilityActorInfo()
 {
 }
@@ -177,11 +252,11 @@ void AElderCharacterBase::InitializeDefaultAttributes() const
 
 void AElderCharacterBase::AddCharacterAbilities()
 {
-	UElderAbilitySystemComponent* AuraASC = CastChecked<UElderAbilitySystemComponent>(AbilitySystemComponent);
+	UElderAbilitySystemComponent* ElderASC = CastChecked<UElderAbilitySystemComponent>(AbilitySystemComponent);
 	if (!HasAuthority()) return;
 
-	AuraASC->AddCharacterAbilities(StartupAbilities);
-	AuraASC->AddCharacterPassiveAbilities(StartupPassiveAbilities);
+	ElderASC->AddCharacterAbilities(StartupAbilities);
+	ElderASC->AddCharacterPassiveAbilities(StartupPassiveAbilities);
 }
 
 void AElderCharacterBase::Dissolve()
@@ -198,26 +273,4 @@ void AElderCharacterBase::Dissolve()
 		Weapon->SetMaterial(0, DynamicMatInst);
 		StartWeaponDissolveTimeline(DynamicMatInst);
 	}
-}
-
-// Called every frame
-void AElderCharacterBase::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-
-}
-
-void AElderCharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-
-	DOREPLIFETIME(AElderCharacterBase, bIsStunned);
-	DOREPLIFETIME(AElderCharacterBase, bIsBurned);
-	DOREPLIFETIME(AElderCharacterBase, bIsBeingShocked);
-}
-
-float AElderCharacterBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator,
-	AActor* DamageCauser)
-{
-	return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 }

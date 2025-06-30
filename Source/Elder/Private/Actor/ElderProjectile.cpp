@@ -8,10 +8,10 @@
 #include "AbilitySystem/ElderAbilitySystemLibrary.h"
 #include "Components/AudioComponent.h"
 #include "Components/SphereComponent.h"
+#include "Elder/Elder.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 
-// Sets default values
 AElderProjectile::AElderProjectile()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -19,7 +19,7 @@ AElderProjectile::AElderProjectile()
 
 	Sphere = CreateDefaultSubobject<USphereComponent>("Sphere");
 	SetRootComponent(Sphere);
-	// Sphere->SetCollisionObjectType(ECC_Projectile);
+	Sphere->SetCollisionObjectType(ECC_Projectile);
 	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);
 	Sphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
@@ -30,10 +30,8 @@ AElderProjectile::AElderProjectile()
 	ProjectileMovement->InitialSpeed = 550.f;
 	ProjectileMovement->MaxSpeed = 550.f;
 	ProjectileMovement->ProjectileGravityScale = 0.f;
-
 }
 
-// Called when the game starts or when spawned
 void AElderProjectile::BeginPlay()
 {
 	Super::BeginPlay();
@@ -42,7 +40,6 @@ void AElderProjectile::BeginPlay()
 	Sphere->OnComponentBeginOverlap.AddDynamic(this, &AElderProjectile::OnSphereOverlap);
 
 	LoopingSoundComponent = UGameplayStatics::SpawnSoundAttached(LoopingSound, GetRootComponent());
-	
 }
 
 void AElderProjectile::OnHit()
@@ -66,11 +63,10 @@ void AElderProjectile::Destroyed()
 	}
 	if (!bHit && !HasAuthority()) OnHit();
 	Super::Destroyed();
-	
 }
 
 void AElderProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
-	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+                                      UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	if (!IsValidOverlap(OtherActor)) return;
 	if (!bHit) OnHit();

@@ -5,9 +5,12 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
+#include "AbilitySystem/Data/CharacterClassInfo.h"
 #include "Interaction/CombatInterface.h"
 #include "ElderCharacterBase.generated.h"
 
+class UDebuffNiagaraComponent;
+class UPassiveNiagaraComponent;
 class UGameplayEffect;
 class UGameplayAbility;
 class UAttributeSet;
@@ -18,7 +21,6 @@ class ELDER_API AElderCharacterBase : public ACharacter, public IAbilitySystemIn
 	GENERATED_BODY()
 
 public:
-	// Sets default values for this character's properties
 	AElderCharacterBase();
 	virtual void Tick(float DeltaTime) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const;
@@ -39,7 +41,7 @@ public:
 	virtual FTaggedMontage GetTaggedMontageByTag_Implementation(const FGameplayTag& MontageTag) override;
 	virtual int32 GetMinionCount_Implementation() override;
 	virtual void IncremenetMinionCount_Implementation(int32 Amount) override;
-	// virtual ECharacterClass GetCharacterClass_Implementation() override;
+	virtual ECharacterClass GetCharacterClass_Implementation() override;
 	virtual FOnASCRegistered& GetOnASCRegisteredDelegate() override;
 	virtual USkeletalMeshComponent* GetWeapon_Implementation() override;
 	virtual void SetIsBeingShocked_Implementation(bool bInShock) override;
@@ -50,7 +52,7 @@ public:
 	FOnASCRegistered OnAscRegistered;
 	FOnDeathSignature OnDeathDelegate;
 	FOnDamageSignature OnDamageDelegate;
-	
+
 	UFUNCTION(NetMulticast, Reliable)
 	virtual void MulticastHandleDeath(const FVector& DeathImpulse);
 
@@ -72,9 +74,8 @@ public:
 	UFUNCTION()
 	virtual void OnRep_Burned();
 
-	
+	void SetCharacterClass(ECharacterClass InClass) { CharacterClass = InClass; }
 protected:
-	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
@@ -94,6 +95,11 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly)
 	bool bDead = false;
+
+	virtual void StunTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
+	float BaseWalkSpeed = 600.f;
 
 	UPROPERTY()
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
@@ -143,6 +149,15 @@ protected:
 	
 	int32 MinionCount = 0;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character Class Defaults")
+	ECharacterClass CharacterClass = ECharacterClass::Warrior;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UDebuffNiagaraComponent> BurnDebuffComponent;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UDebuffNiagaraComponent> StunDebuffComponent;
+	
 private:
 
 	UPROPERTY(EditAnywhere, Category = "Abilities")
@@ -153,5 +168,17 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "Combat")
 	TObjectPtr<UAnimMontage> HitReactMontage;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UPassiveNiagaraComponent> HaloOfProtectionNiagaraComponent;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UPassiveNiagaraComponent> LifeSiphonNiagaraComponent;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UPassiveNiagaraComponent> ManaSiphonNiagaraComponent;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<USceneComponent> EffectAttachComponent;
 
 };

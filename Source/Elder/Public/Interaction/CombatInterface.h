@@ -86,8 +86,8 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
 	void IncremenetMinionCount(int32 Amount);
 
-	// UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
-	// ECharacterClass GetCharacterClass();
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
+	ECharacterClass GetCharacterClass();
 
 	virtual FOnASCRegistered& GetOnASCRegisteredDelegate() = 0;
 

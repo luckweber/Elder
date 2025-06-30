@@ -93,7 +93,15 @@ public:
 	FGameplayTag Abilities_Passive_ManaSiphon;
 
 	FGameplayTag Cooldown_Fire_FireBolt;
-
+	FGameplayTag Cooldown_Arcane_ArcaneShards;
+	FGameplayTag Cooldown_Fire_FireBlast;
+	FGameplayTag Cooldown_Lightning_Electrocute;
+	
+	FGameplayTag Event_Montage_ArcaneShards;
+	FGameplayTag Event_Montage_Electrocute;
+	FGameplayTag Event_Montage_FireBolt;
+		
+	
 	FGameplayTag CombatSocket_Weapon;
 	FGameplayTag CombatSocket_RightHand;
 	FGameplayTag CombatSocket_LeftHand;

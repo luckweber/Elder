@@ -9,6 +9,9 @@
 #include "Engine/OverlapResult.h"
 #include "Interaction/CombatInterface.h"
 #include "ElderAbilityTypes.h"
+#include "AbilitySystem/Data/CharacterClassInfo.h"
+#include "Game/ElderGameModeBase.h"
+#include "Kismet/GameplayStatics.h"
 
 
 UElderAbilitySystemComponent* UElderAbilitySystemLibrary::NativeGetElderASCFromActor(AActor* InActor)
@@ -36,9 +39,61 @@ void UElderAbilitySystemLibrary::AddGameplayTagToActorIfNone(AActor* InActor, FG
 	}
 }
 
+void UElderAbilitySystemLibrary::InitializeDefaultAttributes(const UObject* WorldContextObject,
+	ECharacterClass CharacterClass, float Level, UAbilitySystemComponent* ASC)
+{
+	AActor* AvatarActor = ASC->GetAvatarActor();
+
+	UCharacterClassInfo* CharacterClassInfo = GetCharacterClassInfo(WorldContextObject);
+	FCharacterClassDefaultInfo ClassDefaultInfo = CharacterClassInfo->GetClassDefaultInfo(CharacterClass);
+
+	FGameplayEffectContextHandle PrimaryAttributesContextHandle = ASC->MakeEffectContext();
+	PrimaryAttributesContextHandle.AddSourceObject(AvatarActor);
+	const FGameplayEffectSpecHandle PrimaryAttributesSpecHandle = ASC->MakeOutgoingSpec(ClassDefaultInfo.PrimaryAttributes, Level, PrimaryAttributesContextHandle);
+	ASC->ApplyGameplayEffectSpecToSelf(*PrimaryAttributesSpecHandle.Data.Get());
+
+	FGameplayEffectContextHandle SecondaryAttributesContextHandle = ASC->MakeEffectContext();
+	SecondaryAttributesContextHandle.AddSourceObject(AvatarActor);
+	const FGameplayEffectSpecHandle SecondaryAttributesSpecHandle = ASC->MakeOutgoingSpec(CharacterClassInfo->SecondaryAttributes, Level, SecondaryAttributesContextHandle);
+	ASC->ApplyGameplayEffectSpecToSelf(*SecondaryAttributesSpecHandle.Data.Get());
+
+	FGameplayEffectContextHandle VitalAttributesContextHandle = ASC->MakeEffectContext();
+	VitalAttributesContextHandle.AddSourceObject(AvatarActor);
+	const FGameplayEffectSpecHandle VitalAttributesSpecHandle = ASC->MakeOutgoingSpec(CharacterClassInfo->VitalAttributes, Level, VitalAttributesContextHandle);
+	ASC->ApplyGameplayEffectSpecToSelf(*VitalAttributesSpecHandle.Data.Get());
+}
+
+void UElderAbilitySystemLibrary::GiveStartupAbilities(const UObject* WorldContextObject, UAbilitySystemComponent* ASC,
+                                                      ECharacterClass CharacterClass)
+{
+	UCharacterClassInfo* CharacterClassInfo = GetCharacterClassInfo(WorldContextObject);
+	if (CharacterClassInfo == nullptr) return;
+	for (TSubclassOf<UGameplayAbility> AbilityClass : CharacterClassInfo->CommonAbilities)
+	{
+		FGameplayAbilitySpec AbilitySpec = FGameplayAbilitySpec(AbilityClass, 1);
+		ASC->GiveAbility(AbilitySpec);
+	}
+	const FCharacterClassDefaultInfo& DefaultInfo = CharacterClassInfo->GetClassDefaultInfo(CharacterClass);
+	for (TSubclassOf<UGameplayAbility> AbilityClass : DefaultInfo.StartupAbilities)
+	{
+		if (ASC->GetAvatarActor()->Implements<UCombatInterface>())
+		{
+			FGameplayAbilitySpec AbilitySpec = FGameplayAbilitySpec(AbilityClass, ICombatInterface::Execute_GetPlayerLevel(ASC->GetAvatarActor()));
+			ASC->GiveAbility(AbilitySpec);
+		}
+	}
+}
+
+UCharacterClassInfo* UElderAbilitySystemLibrary::GetCharacterClassInfo(const UObject* WorldContextObject)
+{
+	const AElderGameModeBase* ElderGameMode = Cast<AElderGameModeBase>(UGameplayStatics::GetGameMode(WorldContextObject));
+	if (ElderGameMode == nullptr) return nullptr;
+	return ElderGameMode->CharacterClassInfo;
+}
+
 void UElderAbilitySystemLibrary::GetLivePlayersWithinRadius(const UObject* WorldContextObject,
-	TArray<AActor*>& OutOverlappingActors, const TArray<AActor*>& ActorsToIgnore, float Radius,
-	const FVector& SphereOrigin)
+                                                            TArray<AActor*>& OutOverlappingActors, const TArray<AActor*>& ActorsToIgnore, float Radius,
+                                                            const FVector& SphereOrigin)
 {
 	FCollisionQueryParams SphereParams;
 	SphereParams.AddIgnoredActors(ActorsToIgnore);
@@ -169,8 +224,140 @@ TArray<FVector> UElderAbilitySystemLibrary::EvenlyRotatedVectors(const FVector& 
 	return Vectors;
 }
 
+int32 UElderAbilitySystemLibrary::GetXPRewardForClassAndLevel(const UObject* WorldContextObject,
+	ECharacterClass CharacterClass, int32 CharacterLevel)
+{
+	UCharacterClassInfo* CharacterClassInfo = GetCharacterClassInfo(WorldContextObject);
+	if (CharacterClassInfo == nullptr) return 0;
+
+	const FCharacterClassDefaultInfo& Info = CharacterClassInfo->GetClassDefaultInfo(CharacterClass);
+	const float XPReward = Info.XPReward.GetValueAtLevel(CharacterLevel);
+
+	return static_cast<int32>(XPReward);
+}
+
+bool UElderAbilitySystemLibrary::IsBlockedHit(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->IsBlockedHit();
+	}
+	return false;
+}
+
+bool UElderAbilitySystemLibrary::IsSuccessfulDebuff(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->IsSuccessfulDebuff();
+	}
+	return false;
+}
+
+float UElderAbilitySystemLibrary::GetDebuffDamage(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->GetDebuffDamage();
+	}
+	return 0.f;
+}
+
+float UElderAbilitySystemLibrary::GetDebuffDuration(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->GetDebuffDuration();
+	}
+	return 0.f;
+}
+
+float UElderAbilitySystemLibrary::GetDebuffFrequency(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->GetDebuffFrequency();
+	}
+	return 0.f;
+}
+
+FGameplayTag UElderAbilitySystemLibrary::GetDamageType(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		if (ElderEffectContext->GetDamageType().IsValid())
+		{
+			return *ElderEffectContext->GetDamageType();
+		}
+	}
+	return FGameplayTag();
+}
+
+FVector UElderAbilitySystemLibrary::GetDeathImpulse(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->GetDeathImpulse();
+	}
+	return FVector::ZeroVector;
+}
+
+FVector UElderAbilitySystemLibrary::GetKnockbackForce(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->GetKnockbackForce();
+	}
+	return FVector::ZeroVector;
+}
+
+bool UElderAbilitySystemLibrary::IsCriticalHit(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->IsCriticalHit();
+	}
+	return false;
+}
+
+bool UElderAbilitySystemLibrary::IsRadialDamage(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->IsRadialDamage();
+	}
+	return false;
+}
+
+float UElderAbilitySystemLibrary::GetRadialDamageInnerRadius(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->GetRadialDamageInnerRadius();
+	}
+	return 0.f;
+}
+
+float UElderAbilitySystemLibrary::GetRadialDamageOuterRadius(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->GetRadialDamageOuterRadius();
+	}
+	return 0.f;
+}
+
+FVector UElderAbilitySystemLibrary::GetRadialDamageOrigin(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	if (const FElderGameplayEffectContext* ElderEffectContext = static_cast<const FElderGameplayEffectContext*>(EffectContextHandle.Get()))
+	{
+		return ElderEffectContext->GetRadialDamageOrigin();
+	}
+	return FVector::ZeroVector;
+}
+
 void UElderAbilitySystemLibrary::SetIsBlockedHit(FGameplayEffectContextHandle& EffectContextHandle,
-	bool bInIsBlockedHit)
+                                                 bool bInIsBlockedHit)
 {
 	if (FElderGameplayEffectContext* ElderEffectContext = static_cast<FElderGameplayEffectContext*>(EffectContextHandle.Get()))
 	{
